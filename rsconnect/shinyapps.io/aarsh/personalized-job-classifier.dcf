@@ -1,0 +1,12 @@
+name: personalized-job-classifier
+title:
+username:
+account: aarsh
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 230122
+bundleId: 1049938
+url: https://aarsh.shinyapps.io/personalized-job-classifier/
+when: 1509222878.1241
+asMultiple: FALSE
+asStatic: FALSE

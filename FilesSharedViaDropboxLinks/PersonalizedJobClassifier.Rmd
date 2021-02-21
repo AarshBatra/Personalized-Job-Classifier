@@ -1,0 +1,1045 @@
+---
+title: 'Personalized Job Classifier Model: Simulation'
+author: "Aarsh Batra"
+date: 'October, 2017'
+output: pdf_document
+urlcolor: blue
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, echo = TRUE)
+  
+```
+
+## About
+The Personalized Job Classifier model aims at building a model personalized to a specific 'User' such that when feeded with information of a specific company (in form of a feature vector) the model will output a binary label (0/1) that would inform its 'User' of his job prospects in that company ('0' = didn't get the job; '1' = got the job). 'Personalized' means that the classifier is specifically trained and tuned to a specific User and is rendered unusable or at least unfit for anyone else to use. Below, I provide a simulation for the entire model building process from scratch in the R programming language. This is essentially my lab notebook for the model in which I have recorded (alongside the code) all of my thoughts that went into writing the code.
+
+## Recommended Reading
+Please read the paper which I wrote in correspondance to the code below. The paper lays down the theortical foundation and the terminology for the model. It is 11 pages and would take 15-20 min to read. I strongly recommend reading it as that way all the code ahead will make much more sense. I will provide explanations in good detail but moving ahead I strongly recommend that you read the paper. Click [here](https://www.dropbox.com/s/jmocezoyhm5f28p/PersonalizedJobClassifierPaperAndSim.pdf?dl=0) to view/download the paper. 
+
+## Purpose
+The purpose of this simulation is to serve as a guide to anyone wanting to build a Personalized Job Classifier for themselves. The code ahead covers the entire process of building such a model, which involves but is not limited to building datasets from scratch, followed by training, tuning, prediction and measuring of accuracy of the models built.
+
+## Important Considerations
+Below considerations will make more sense once you have read the correponding paper.
+
+* Throughout the code I assume that the model is built for a user named 'User1'.
+
+* Total number of companies = 100; Total number of applicants per company = 100. These numbers are arbitrary and you may choose to build model with as many number of companies as you wish.
+
+* Both 'Applicant Datasets' and 'Company Dataset' use binary features only. This is done to for simulation purposes such that datasets can be generated automatically from scratch using commands like 'runif'. But,  when building a full fledged implementation of the model, one must use techniques like web scraping to generate features much richer than the binary ones.
+  
+* I have built this simulation by assuming that User1 is a person whose academic credentials lie in fields like Economics/Data Analytics/Computer Science. (You can think of User1 as an Economics Graduate or a CS graduate). Given that, I have appropriately constructed the features (columns) for the applicant dataset on which to fill in information for various applicants. Also I have assumed that companies C~1~ to C~100~ are the type of companies which are looking for applicants with credentials like that of User1 (for e.g. some consultancy firm, Banks, etc). You may build classifiers by assuming different settings.
+
+* Finally, when I mean 'company' that does not mean company in the 'strict' sense. It generally refers to any kind of employer User1 might be interested in, e.g. University, NGO, Research Group, Banks etc.
+  
+## Pacakges and Version information
+I recommend updating to the latest R version (3.4.2, as on October, 15, 2017) to avoid any clashes with pacakages built under different versions of R. Below code chunk has been de-activated (`eval = FALSE`) as it referenced to local files on my computer, so you can ignore it. Instead, Click [here](https://www.dropbox.com/s/6jocrd0mklzsknr/PackagesAndVersionInfo.pdf?dl=0) to view the list of pacakges that were used to build this simulation (The list was generated using `devtools::session_info()` command). 
+
+&nbsp;
+
+```{r packagesInfo, eval = FALSE}
+load("sessionInfoRestore.RData")
+sessionInfoRestore
+```
+
+&nbsp;
+
+## What is the code doing?
+Figure 1 below gives an overview of the entire code. After the parameter initialization step, the entire code is divided in two parts. Below code chunk has been de-activated (`eval = FALSE`) as it referenced to local files on my computer, so you can ignore it. Instead, Click [here](https://www.dropbox.com/s/ejmjetw59gwgjy7/Figure1CodeOutline.pdf?dl=0) to view Figure 1.
+
+&nbsp;
+
+```{r fullCodeSkeleton, eval = FALSE}
+knitr::include_graphics("C:/Users/pc/Dropbox/RA Docs/PersonalizedJobClassifier/...")
+```
+
+&nbsp;
+
+**Part-1** (Steps:2-14, Figure 1) builds 100 models (M~1~ to M~100~) corresponding to 100 companies (C~1~ to C~100~).Also, in every iteration (one pass through the loop shown above) it accumalates the personalized labels correponding to User1 in `myPersonalizedLabels` vector (Remember the personalized label for User1 correponding to C~n~ is obtained by passing the **Applicant Feature Vector** of User1 through M~n~). 
+
+**Part-2** (Steps:15-21, Figure 1) builds the `companyDataset` which is used to train the Personalized Job Classifier Model.
+
+Next, let's begin with going through the actual code. First comes the Parameter Initialization step:
+
+## Parameter initialization
+
+&nbsp;
+
+```{r paramInit}
+# used later to calculate elapsed Time-----------------------------------------
+startTime <- proc.time()
+
+# set seed---------------------------------------------------------------------
+set.seed(336)
+
+# load pacakges----------------------------------------------------------------
+library(tidyverse)
+library(knitr)
+library(caret)
+library(magrittr)  # for using pipes (%>%)
+
+# parameter initialization-----------------------------------------------------
+kTotalNumOfApp <- 100
+kTotalNumOfAppDatasets <- 100
+kTotalNumOfFeat <- 20
+kTotalNumOfCriterions <- 10
+
+# lists for storing datasets for debugging-------------------------------------
+  # list of all applicant datasets (for companies C-1 to C-100)
+  # where appDatasetList[[z]] is the applicant dataset for the 
+  # z'th company (C-z). Also, making lists for storing the train  
+  # and test subsets of appDatasetList[[z]]
+appDatasetList <- list()
+appDatasetListTrainData <- list()
+appDatasetListTestData <- list()
+
+# list for storing models (M-1 to M-100, corresp to C-1 to C-100)--------------
+modelsList <- list()
+
+# more on this in later code---------------------------------------------------
+criteriaNumberRecord <- c(rep(NA, times = kTotalNumOfAppDatasets))
+
+# stores labels as returned by running User1's AFV through models M-1 to M-100
+myPersonalizedLabels <- c()
+
+# user interface---------------------------------------------------------------
+print(sprintf(">> Simulation Part-1: total iterations = %i", 
+             kTotalNumOfAppDatasets), quote = FALSE)
+
+print("     Running...", quote = FALSE)
+
+
+```
+
+&nbsp;
+
+## Part-1: Code
+
+Part-1 of the code comprises of **Steps: 2 to 14**, in Figure 1. This is a relatively big chunk of code. I recommend first reading it all in one go and then revisit specific parts as and when necessary. Please read the code **AND** the comments for best understanding. I have tried to make the comments sufficiently descriptive keeping in mind the reader who hasn't read the corresponding paper. But these comments are no substitute for the paper. To get the most out of this code, read the corresponding paper.
+
+&nbsp;
+
+```{r Part-1}
+# Part-1: Build 100 models M-1 to M-100 corresp to C-1 to C-100----------------
+for (z in 1:kTotalNumOfAppDatasets){
+  
+  # filling applicant dataset (tmpAppDatasetConstrutor) of C-z-----------------    
+    # Generate 20 random numbers (single row in the applicant dataset of a com-
+    # -pany) for each of the total num of app (100) = raw applicant dataset
+    # for C-z
+  tmpAppDatasetConstructor <- matrix(NA, nrow = kTotalNumOfApp, 
+                                     ncol = kTotalNumOfFeat)
+  
+  for (i in 1:kTotalNumOfApp){
+    temp <- runif(kTotalNumOfFeat, 0, 1)
+    temp <- temp > (runif(1, 0, 1))
+    tmpAppDatasetConstructor[i, ] <- temp
+  }
+   
+  # converting raw appDataset for C-z from logical(TRUE/FALSE) to numeric (0/1)
+  tmpAppDatasetConstructor <- apply(tmpAppDatasetConstructor, c(1, 2), 
+                                    as.integer)
+  
+  # defining row and column names for tmpAppDatasetConstructor
+  tempRowNamesVec <- c(rep(NA, times = nrow(tmpAppDatasetConstructor)))
+  for (p in 1:nrow(tmpAppDatasetConstructor)){
+    tempRowNamesVec[p] <- sprintf("App-%i", p)
+  }
+  
+  rownames(tmpAppDatasetConstructor) <- tempRowNamesVec
+  colnames(tmpAppDatasetConstructor) <- c("hi sch deg?", 
+  "hi sch deg highest hns?",	"clg deg in Econ/SocSc/CS?",	
+  "highest hns in any cleg deg?",	
+  "crsewrk in quant sub e.g Lin Alg, Calculus?",	
+  "strong grades (e.g >90%) in any qnt sub?",	"grad sch deg?",	
+  "grad sch deg highest hns?", "R/MATLAB/STATA/SAS + fmlr?",	
+  "R/MATLAB/..+prty cmfrtble?",	
+  "gen purp prg lng (e.g. Python) + fmlr?",	
+  "gen purp prg lng (e.g. Python) + prty cmf?",	
+  "dtabse mng sys (e.g MySQl ..) + fmlr?",	
+  "dtabse mng sys (e.g MySQl ..) + pr cmf?", "Hadoop/Apache Spark+ fmlr?",
+  "Hadoop/Apache Spark prty cmfrtable?",	
+  "exp estmting eco'ric mod in prg lng's?",	"exp in experimental design?",
+  "Prev rsrch exp/ frml empl?",	"rec any awards/fellowships/schlrships?")
+  
+  
+  # logic correction in raw 'tmpAppDatasetConstructor'-------------------------
+    # each row of tmpAppDatasetConstructor contains randomly distributed 0's 
+    # and 1's. Given the colnames (features) these raw 0's and 1's will have
+    # logical errors, each row in turn needs to be checked for possible
+    # logical inconsistencies and be corrected if found.
+  
+  # e.g.of logical mistake corrected: If rec hi sch deg with hns is TRUE(1) 
+  # then rec hi sc deg cannot be false(0). Similar to this all the column
+  # numbers in 'colNumWithPotClash' has a potential for a clash with other
+  # columns. Look at the colnames to learn more.
+  
+  colNumWithPotClash <- c(2, 4, 6, 8, 10, 12, 14, 20) 
+  for (l in 1:nrow(tmpAppDatasetConstructor)){
+    for (m in 1:length(colNumWithPotClash)){
+      if (tmpAppDatasetConstructor[l, colNumWithPotClash[m]] == 1){
+        if (tmpAppDatasetConstructor[l, (colNumWithPotClash[m] - 1)] == 0){
+          tmpAppDatasetConstructor[l, (colNumWithPotClash[m] - 1)] <- 1
+        }
+        else{
+          next
+        }
+      }
+      else{
+        next
+      }
+    }
+  }
+  
+  # another type of logical mistake corrected----------------------------------
+    # Type of logical mistake corrected (or treat it as an assumption): If grad 
+    # sch deg rec =TRUE, then both cleg deg rec and hi sch deg rec must be TRUE
+  
+  for (n in 1:nrow(tmpAppDatasetConstructor)){
+    if (tmpAppDatasetConstructor[n, 7] == 1){
+      if ((tmpAppDatasetConstructor[n, 3]) == 1 &&
+        (tmpAppDatasetConstructor[n, 1] == 1)){
+        next
+      }
+      else{
+        tmpAppDatasetConstructor[n, 3] <- 1
+        tmpAppDatasetConstructor[n, 1] <- 1
+      }
+    }
+    else{
+      if (tmpAppDatasetConstructor[n, 3] == 1){
+        if (tmpAppDatasetConstructor[n, 1] == 0){
+          tmpAppDatasetConstructor[n, 1] <- 1
+        }
+        else{
+          next
+        }
+      }
+      else{
+        next
+      }
+    }
+  }
+  
+  # coerce from type 'matrix' to type 'data.frame', for ease in handling
+  tmpAppDatasetConstructor <- as.data.frame(tmpAppDatasetConstructor)
+  
+  # label construction for 'tmpAppDatasetConstructor'--------------------------
+    # labels construction for tmpAppDatsetConstructor using a randomly chosen
+    # criteria (out of a total of 10 criterions). Each criteria has a 
+    # 'degree of selectivity' associated with it (scale ranging from 1 to 10), 
+    #  such that criteria-1 is most selective (10/10), criteria-2 (9/10) ... 
+    # criteria-10 (1/10, least selective).
+    
+    # Degree of selectivity is meant to associate a company with a particular 
+    # selection criteria. This is done for simulation purposes, to generate  
+    # labels for our applicant dataset. The purpose of this criterion system,
+    # is to try to simulate the real world differences in selection criteria,
+    # between companies and serve as a good representative of the total set
+    # of possible criterions out there.
+  
+  # randomly choose a criteria number for C-z----------------------------------
+  criteriaNumber <- sample(c(1:kTotalNumOfCriterions), 1)
+  
+  # initialize the labels column with NA's
+  labelsForTmpAppDataset <- as.data.frame(matrix(NA, 
+                                         nrow = nrow(tmpAppDatasetConstructor),
+                                         ncol = 1))
+  
+  # Almost all criterions below (total 10) have a general theme, which they 
+  # use to automatically label training data for simulation purposes. So, for 
+  # a particular training example (a single row in the applicant dataset for a
+  # particular company), a label of 1 is assigned if the number of "1's" in 
+  # the row are greater or equal to a particular threshold. Next, a label of 
+  # zero is assigned, if the number of "1's" in the row are less than equal to 
+  # a particular threshold. For rest of the cases, a 'custom' decision making 
+  # mechanism is employed, which if satisfied, then the row is labelled as '1' 
+  # , else '0'. Think of '1' as representing 'presence of a quality', and of
+  # '0' as 'absence of a quality'. 
+  
+  switch(criteriaNumber,
+         "1" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 18){
+             labelsForTmpAppDataset[q, ] <- 1
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 14){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 2] == 1) && 
+               (tmpAppDatasetConstructor[q, 4] == 1) && 
+               (tmpAppDatasetConstructor[q, 6] == 1) && 
+               (tmpAppDatasetConstructor[q, 10] == 1) && 
+               (tmpAppDatasetConstructor[q, 19] == 1) && 
+               (tmpAppDatasetConstructor[q, 12] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "2" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 17){
+             labelsForTmpAppDataset[q, ] <- 1
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 13){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 2] == 1) &&
+                (tmpAppDatasetConstructor[q, 4] == 1) && 
+                (tmpAppDatasetConstructor[q, 6] == 1) && 
+                (tmpAppDatasetConstructor[q, 10] == 1) &&
+                (tmpAppDatasetConstructor[q, 12] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "3" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 16){
+             labelsForTmpAppDataset[q, ] <- 1
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 12){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 2] == 1) && 
+                (tmpAppDatasetConstructor[q, 4] == 1) && 
+                (tmpAppDatasetConstructor[q, 6] == 1) &&
+                (tmpAppDatasetConstructor[q, 10] == 1) && 
+                (tmpAppDatasetConstructor[q, 11] == 1) && 
+                (tmpAppDatasetConstructor[q, 14] == 1) && 
+                (tmpAppDatasetConstructor[q, 15] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "4" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 15){
+             labelsForTmpAppDataset[q, ] <- 1
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 11){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 2] == 1) && 
+                (tmpAppDatasetConstructor[q, 4] == 1) && 
+                (tmpAppDatasetConstructor[q, 6] == 1) && 
+                (tmpAppDatasetConstructor[q, 10] == 1) &&
+                (tmpAppDatasetConstructor[q, 11] == 1) &&
+                (tmpAppDatasetConstructor[q, 14] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "5" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 14){
+             labelsForTmpAppDataset[q, ] <- 1
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 10){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 2] == 1) && 
+                (tmpAppDatasetConstructor[q, 4] == 1) && 
+                (tmpAppDatasetConstructor[q, 6] == 1) && 
+                (tmpAppDatasetConstructor[q, 10] == 1) && 
+                (tmpAppDatasetConstructor[q, 11] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "6" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 13){
+             if ((tmpAppDatasetConstructor[q, 4] == 1) && 
+                (tmpAppDatasetConstructor[q, 6] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+             
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 9){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 4] == 1) && 
+                (tmpAppDatasetConstructor[q, 6] == 1) && 
+                (tmpAppDatasetConstructor[q, 9] == 1) && 
+                (tmpAppDatasetConstructor[q, 17] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "7" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 12){
+             if ((tmpAppDatasetConstructor[q, 3] == 1) && 
+                (tmpAppDatasetConstructor[q, 6] == 1) && 
+                (tmpAppDatasetConstructor[q, 9] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+             
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 8){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 3] == 1) &&
+                (tmpAppDatasetConstructor[q, 6] == 1) &&
+                (tmpAppDatasetConstructor[q, 10] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "8" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 11){
+             if ((tmpAppDatasetConstructor[q, 3] == 1) &&
+                (tmpAppDatasetConstructor[q, 6] == 1) &&
+                (tmpAppDatasetConstructor[q, 12] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+             
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 7){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 3] == 1) &&
+                (tmpAppDatasetConstructor[q, 6] == 1) &&
+                (tmpAppDatasetConstructor[q, 12] == 1) &&
+                (tmpAppDatasetConstructor[q, 16] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "9" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 10){
+             if ((tmpAppDatasetConstructor[q, 4] == 1) &&
+                (tmpAppDatasetConstructor[q, 6] == 1) &&
+                (tmpAppDatasetConstructor[q, 17] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+             
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 6){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 4] == 1) &&
+                (tmpAppDatasetConstructor[q, 6] == 1) &&
+                (tmpAppDatasetConstructor[q, 10] == 1) &&
+                (tmpAppDatasetConstructor[q, 17] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         },
+         
+         "10" = for (q in 1:nrow(tmpAppDatasetConstructor)){
+           if (sum(tmpAppDatasetConstructor[q, ]) >= 9){
+             if ((tmpAppDatasetConstructor[q, 3] == 1) &&
+                (tmpAppDatasetConstructor[q,6] == 1) && 
+                (tmpAppDatasetConstructor[q, 12] == 1) &&
+                (tmpAppDatasetConstructor[q, 16] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1  
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+             
+           }
+           else if (sum(tmpAppDatasetConstructor[q, ]) <= 5){
+             labelsForTmpAppDataset[q, ] <- 0
+           }
+           else{
+             if ((tmpAppDatasetConstructor[q, 3] == 1) &&
+                (tmpAppDatasetConstructor[q, 6] == 1) &&
+                (tmpAppDatasetConstructor[q, 12] == 1) &&
+                (tmpAppDatasetConstructor[q, 14] == 1) &&
+                (tmpAppDatasetConstructor[q, 16] == 1) &&
+                (tmpAppDatasetConstructor[q, 19] == 1)){
+               
+               labelsForTmpAppDataset[q, ] <- 1
+             }
+             else{
+               labelsForTmpAppDataset[q, ] <- 0
+             }
+           }
+         })  # switch statement ends here
+  
+  # storing criteria number of C-z for later reference-------------------------
+  criteriaNumberRecord[z] <- criteriaNumber 
+  
+  # stacking 'labels' column at the end of tmpAppDatasetConstructor------------
+    # It turns out that labels generated from the above process leads to 
+    # 'perfect separation' in data. This happens because in all of the 
+    # criterions we use some sort of thresholding (above which label is 1, 
+    #  below which label is 0) which leads to such an effect. So to deal with 
+    # this issue we add regularization to our model via the 'caret' package 
+    # using the method glmnet. This will help to reduce the extent of 
+    # overfitting in the model and help to make the model more generalizable 
+    # and also intuitive for simulation purposes.
+  tmpAppDatasetConstructor[, (kTotalNumOfFeat+1)] <- (labelsForTmpAppDataset
+                                                      %>% as.data.frame())
+                                                     
+  colnames(tmpAppDatasetConstructor)[kTotalNumOfFeat+1] <- "labels"
+  
+  # setting various controls for training of the model-------------------------
+  indexTrainTmp <- createDataPartition(tmpAppDatasetConstructor$labels,
+                                       p = 0.70, list = FALSE)
+  trainingSetTmp <- tmpAppDatasetConstructor[indexTrainTmp, ]  # training set
+  testSetTmp <- tmpAppDatasetConstructor[-indexTrainTmp, ]  # test set
+  controlsTmp <- trainControl(method = "repeatedcv", repeats = 5)
+  
+  # setting up a search grid for k fold cross validation-----------------------
+    # below search grid contains only one value each for 'alpha' and 'lambda',
+    # this is because I have already trained and tuned the model several times
+    # and the below values are the optimal ones as they performed best on avg
+    # in k fold cross validation. Note alpha = 1 (lasso penalty), alpha = 0,
+    # (ridge penalty). See ?glmnet for more details.
+  searchGridTmp <- expand.grid(alpha = 0.07206841, lambda = 0.03755844) 
+  
+  # training using caret package's 'glmnet' method-----------------------------
+  modelsList[[z]] <- train(x = trainingSetTmp[, 1:kTotalNumOfFeat], 
+                           y = as.factor(
+                               trainingSetTmp[, (kTotalNumOfFeat+1)]), 
+                           method = "glmnet", 
+                           metric = "Accuracy",
+                           trControl = controlsTmp,
+                           tuneGrid = searchGridTmp
+                          )
+  
+  # constructing User1's applicant feature vector------------------------------
+    # 'myAppFeatVec' would then be feeded to model M-z (corresponding to compa-
+    # -ny C-z) to get a label L-z, which will then be stored in 
+    # 'myPersonalizedLabels' vector.
+  myAppFeatVec <- as.numeric(c(1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 
+                               1, 1, 0, 0, 1, 1, 0, 1, 0, 1))
+  myAppFeatVec <- as.data.frame(matrix(myAppFeatVec, 1, kTotalNumOfFeat))
+  colnames(myAppFeatVec) <- (colnames(tmpAppDatasetConstructor)[
+    1:kTotalNumOfFeat])
+  lbl <- predict.train(modelsList[[z]], newdata = myAppFeatVec, type = "raw")
+  lbl <- as.numeric(lbl)
+  myPersonalizedLabels <- append(myPersonalizedLabels, lbl)
+
+  # store datasets for future reference----------------------------------------
+    # transfer 'tmpAppDatasetConstructor' to appDatasetList[[z]] (corresponding 
+    # to company C-z) and also storing in two seperate lists the corresponding
+    # train and test sets for each applicant dataset.
+  appDatasetList[[z]] <- tmpAppDatasetConstructor
+  appDatasetListTrainData[[z]] <- tmpAppDatasetConstructor[indexTrainTmp, ]
+  appDatasetListTestData[[z]] <-  tmpAppDatasetConstructor[-indexTrainTmp, ]
+  
+  # user interface-------------------------------------------------------------
+  if (z != kTotalNumOfAppDatasets){
+    print(sprintf("  Iteration %i/%i: Complete...", z, kTotalNumOfAppDatasets),
+           quote = FALSE)
+    }else{
+      print(sprintf("  Iteration %i/%i: Complete", z, kTotalNumOfAppDatasets))
+    }
+    
+}  # top most for loop for Part 1 ends here.
+
+# accuracy stats of the 100 models trained above-------------------------------
+accuracyModelsList <- lapply(modelsList, function(x) x$results$Accuracy)
+minAccuracyModelsList <- min(as.numeric(accuracyModelsList))
+maxAccuracyModelsList <- max(as.numeric(accuracyModelsList))
+
+# Part-1 ends here-------------------------------------------------------------
+
+```
+
+&nbsp;
+
+## Part-1: Code Discussion
+
+#### Where do we stand?
+Before beginning with **Part-2**, let's see where we are in the model building process. **Part-1** is complete. This  means that we have constructed `r length(modelsList)` models M~1~ to M~100~ corresponding to companies C~1~ to C~100~ and applicant datasets D~1~ to D~100~ respectively. 
+
+These models are stored in a list called `modelsList`. We have also stored User1's personalized labels (L~1~ to L~100~) in the vector `myPersonalizedLabels` which we constructed by passing User1's applicant feature vector named,`myAppFeatVec` in turn through models (M~1~ to M~100~) respectively. These personalized labels will be used as the `labels` column for the `companyDataset` which we will construct in Part-2 of code. 
+
+Next, I will discuss in more detail a few chunks of code that needs more attention than that provided by the comments above:
+
+#### Applicant Dataset: Structure
+First, lets see the general structure of a typical applicant dataset for a company. Below, I display the  first 5 rows and a few feature columns (I display 4 feature columns, but the dataset contains `r kTotalNumOfFeat` feature columns) followed by a `labels` column for the first applicant dataset (`appDatasetList[[1]]`) corresponding to C~1~. Note that the `labels` column comes at the end (i.e. 21st column), but I display it here just after the first 4 columns for illustration purposes. 
+
+&nbsp;
+
+```{r appDatasetStrDisp}
+colNotToDisplay <- c(5:20)
+knitr::kable(
+  appDatasetList[[1]][1:5, -colNotToDisplay],
+  caption = "Applicant Dataset: Structure"
+)
+```
+
+&nbsp;
+    
+*For those who have read the corresponding paper, please refer Figure 1 of the paper which displays the same structure as the table above*. Each row of the applicant dataset contains information on a single applicant in form of a feature vector, followed by a label (0/1). This label tells us whether or not a particular applicant with some set of features got a job in C~1~. Together all of these rows form the applicant dataset for the comapany C~1~. Similar to the applicant dataset for C~1~ (stored in `appDatasetList[[1]]`) there are applicant datasets for C~2~ to C~100~ (stored in `appDatasetList[[2]]`...`appDatasetList[[100]]`).
+
+#### Applicant Dataset: Column Names
+Lets look at the column names for the applicant datasets in more detail.
+
+&nbsp;
+
+```{r colNamesAppDataset}
+print(colnames(appDatasetList[[1]]))
+```
+
+&nbsp;
+
+Each column (except the `labels` column) is to be interpreted as a **feature** that captures some information about the applicant. The `labels` column in the end captures one of two states; '1'- gets the job, '0'- does not get a job. Each feature is to be interpreted as a question which has one of two answers; yes(1)/ no(0).
+
+I have abbreviated the features such that they can be easily reconstructed into full questions by the reader, e.g. feature `[1]` in the above list asks the following question: **Does the applicant have a high school degree?** whose answer would be either yes(1) or no(0) but not both. Similarly, another example is, feature `[8]` which asks the following question: **Does the applicant have a grad school degree with highest honors?** whose answer will be either yes(1) or no(0). 
+
+Please note that not all of the features may not neatly fit in (1/0) outcome state, but I have assumed that they do for simulation purposes. Also, when building a full fledged model (which we will not do here), in addition to these binary features, we can use much more interesting features using techniques like web scraping (I have discussed this in greater detail in the correponding paper).
+
+#### Applicant Dataset: Logic correction
+In the code I perform logic correction on the applicant datasets. This is important because the **raw** apppicant dataset contains in a given row randomly distributed 0's and 1's. But given the fact that we have specifically defined the columns for the applicant dataset, we cannot directly use the **raw** applicant dataset to carry out further analysis. We have to correct for the logical inconsistencies in the columns. For e.g. let's take the first row (Applicant-1) of the applicant Dataset corresponding to C~1~. So the applicant feature vector for Applicant-1 consists of 20 numbers (0's and 1's) each corresponding to a specific column. Now, without logic correction the AFV of Applicant-1 might have a `0` under column-1 (`r colnames(appDatasetList[[1]])[1]`), but `1` under column-2 (`r colnames(appDatasetList[[1]])[2]`) but that is not possible as if a person possesses a high school degree(with highest honors), than that implies that the person has a high school degree.
+
+Similarly, I have corrected all possible potential clashes between columns of the applicant dataset. The vector `colNumWithPotClash` in the code contains all the columns that have a potential for clash with atleast one other column. I recommend that the reader now look at the 'logic correction' code once again (referencing the column names/number as and when needed) I hope it will make more sense now.
+
+#### Applicant Dataset: Automatic Label Generation
+In the code there is a big `switch` statement that is used to associate each company with a particular `criteriaNumber`(ranging from 1 to 10) whose purpose is to automatically label the applicant datasets for each company. For e.g. if `criteriaNumber` corresponding to C~1~ is `1` than C~1~ will refer to the `"1"` in the switch statement and use the instrutions to label the rows of its corresponding applicant dataset. 
+
+Choosing this "criterion" system helps in automating the labelling of the applicant datasets as manual labelling is not practical for simulation purposes. Another reason for choosing this system is to draw parallels with the real world hiring process. For e.g., we can think of having a `1` in each of the columns of the applicant datasets as possesing a quality and having a `0` as lacking a quality such that if an applicant has a lot of 1's it is highly likely that he will get a job and someone with a lot of 0's is likely to not get a job. 
+
+So the criterions above (ranging from 1 to 10) a combination of this simple counting approach (e.g. if total number of 1's > 18; give the job) and besides that each criterion also utilizes a custom approach (e.g. a person with a more than eight 0's in his applicant feature vector will only get a job if he has a grad school degree with highest honors). The criterion system that I have set up can be 'roughly' thought of as decreasing in **degree of selectivity** as we move from 1 to 10 (See the code for individual criterions for more insights). For e.g. Criterion-1 can be thought of as the most strict and hence a company posessing it can be thought of as a company in which it is very hard to get in. Similarly Criterion-10 can be thought of as least strict.
+
+The `criteriaNumberRecord` vector stores the criteriaNumber for each company. `criteriaNumberRecord[[z]]` represents the criteriaNumber corresponding to C~z~. Let's look at the `criteriaNumberRecord` vector (Note that each company is assigned a criteriaNumber by randomly choosing a number b/w 1 to 10).
+
+&nbsp;
+
+```{r criteriaNumberRecVecDisp}
+criteriaNumberRecord
+```
+ 
+&nbsp;
+
+and, here is the distribution of `criteriaNumberRecord`
+
+&nbsp;
+
+```{r criteriaNumberRecVecHist}
+tmpCritRecDataFrame <- as.data.frame(criteriaNumberRecord)
+colnames(tmpCritRecDataFrame) <- "criteriaNumber"
+ggplot(data = tmpCritRecDataFrame) + geom_bar(mapping = aes(x = criteriaNumber))
+
+```
+
+&nbsp;
+
+#### Model Output
+Now, lets look at the output of a typical model. `modelsList[[z]]` stores the trained model correponding to C~z~. Let's see the output for `modelsList[[1]]`,
+
+&nbsp;
+
+```{r outputModelsList[[1]]}
+modelsList[[1]]
+```
+
+&nbsp;
+
+The output contains useful summary which can be read as follows, the model was trained using the **glmnet** method in the **caret** package. The model was trained using 70 samples (in the code above I alloted 70% of the total rows = `r nrow(appDatasetList[[1]])` to training set). Within these 70 samples the underlying caret package uses the **10 fold repeated cross validation** as its resampling method and repeat it 5 times for all the parameter settings in the search Grid. The accuracy of the model is `r modelsList[[1]]$Accuracy` which means that the final model chosen (alpha = `r modelsList[[1]]$results$alpha`, lambda = `r modelsList[[1]]$results$lambda`)  correctly predicted the label 95% of the time on the cross validation set (this accuracy is an average over the total number of resampling attempts, which in the above case is 50, 10 folds repeated 5 times). 
+
+Please note that in the code above I have not set up a search grid for searching of parameters because I already did that while I was training and tuning the model and found the above values for **alpha** and **lambda** to be the best amongst the lot. You can set up a search Grid for yourself using the `expand.grid()` function if you would like to see it work for yourself.
+
+#### User1 Information: AFV, Personalized Labels
+To wrap up Part-1 lets look at the applicant feature vector and the personalized labels of User1,
+
+&nbsp;
+
+```{r afvUser1Expln}
+matrix(myAppFeatVec, 1, 20)
+```
+
+&nbsp;
+
+`[,1]` to `[,20]` correspond to the `[1]` to`[20]` features mentioned above. Just like any other applicant User1 also has a feature vector which is represented above. Because we are building a model for User1 we will  only focus on his AFV. In Part-1 we construct the `myPersonalizedLabels` vector one element at a time (adding one element to the end in each iteration of the main (top-most) for loop of the Part-1). 
+
+For example, to get `myPersonalizedLabels[z]` we pass User1's AFV through M~z~ such that the `myPersonalizedLabels[z]` column inform User1 whether or not he got a job in company C~z~ (as M~z~ is the model corresponding to company C~z~). So in total User1's `myPersonalizedLabels` vector will have `r kTotalNumOfAppDatasets` elements, where element the z'th element is the User1's label for C~z~. The `myPersonalizedLabels` column will be used as the labels column of the companyDataset in Part-2 of the code. 
+
+The `myPersonalizedLabels` column for User1 is shown below,
+
+&nbsp;
+
+```{r myPersLabColDisp}
+matrix(myPersonalizedLabels,1,100)
+```
+
+&nbsp;
+
+I hope that now there is a strong foundation in what Part-1 of the model is doing. Let's go on to **Part-2** of the model.
+
+## Part-2: Code
+In Part-2 of the code we will build the `companyDataset` which will then be used to build the **Personalized Job Classifier Model**. 
+
+Let's first have a look at the entire code for Part-2 and then we will discuss specific chunks of code in more detail.
+
+&nbsp;
+
+```{r Part-2}
+
+# user interface---------------------------------------------------------------
+print("-----------------------------------------------", quote = FALSE)
+print(">> Simulation Part-2", quote = FALSE)
+print("     Running...", quote = FALSE)
+
+# initializing companyDataset matrix (sans labels)----------------------------- 
+kTotalNumOfComp <- kTotalNumOfAppDatasets
+companyDataset <- matrix(NA, kTotalNumOfComp, kTotalNumOfFeat)
+
+# filling company dataset------------------------------------------------------
+  # Generate 20 random numbers (single row in the company dataset or in other
+  # words a feature vector for a single company) for each of 100 companies.
+  # This will give us the 'raw' companyDataset.
+companyDataset <- apply(companyDataset, 1, 
+                        function(x) x <- runif(kTotalNumOfFeat, 0, 1))
+companyDataset <- apply(companyDataset, 1, function(x) x <- (x > runif(1, 0, 1)))
+
+# converting company dataset from logical(T/F) to numeric(0/1)-----------------
+companyDataset <- apply(companyDataset, c(1, 2), as.integer)
+
+# constructing rownames for company dataset------------------------------------
+tempRowNamesVec <- c(rep(NA, times = kTotalNumOfComp))
+for (b in 1:nrow(companyDataset)){
+  tempRowNamesVec[b] <- sprintf("Company-%i", b)
+}
+
+# assigning names to rows and columns of the companyDataset-------------------
+rownames(companyDataset) <- tempRowNamesVec
+colnames(companyDataset) <- c("emplyrUniversity?", "emplyrPrivateComp?", 
+"emplyrNGO?",	"emplyrListedOnAStockExchange?",	"emplyrWorkTypeResearch?",
+"emplyrISO9001OrOtherEqvlentCompliant?",	"emplyrLessThan1YrOldInItsSec?",
+"emplyrGreaterThan10YrsOldInItsSec?", "NumOfEmployeesLessThan100?",
+"NumOfEmployeesGreaterThan1000?", "emplyrCountAsOneOfTop50InItsSector?",
+"emplyrInternationallyRecognizedViaItsWork?",	
+"emplyrInternationalPhysicalPresence?", "emplyrRecipientOfAwardsInRecogOfWork?",
+"emplyrHireOnlyLocallyLessCulturalDiversity?",	
+"emplyrPerformPoorOnSocialRespIndexLikeCSR?",	
+"emplyrHasSignificantOnlinePresence?", "emplyrSignifSpendingInRandD?",	
+"emplyrSignifSpendOnGrowingTechLikeAI?", "emplyrAnyControversialHistory?")
+
+# logic corrections in the company Dataset-------------------------------------
+  # I will correct 1 mistake at a time for better interpretability of the code.
+  # This comes at the cost of using more  for loops then needed.
+
+# type of logic correction: employer for a single row in the company dataset 
+# can be only 'one' of the various types (see column names above for more info)
+for (v in 1:nrow(companyDataset)){
+  if (sum(companyDataset[v, 1], companyDataset[v, 2], 
+         companyDataset[v, 3]) != 1){
+    if (sum(companyDataset[v, 1], companyDataset[v, 2], 
+           companyDataset[v, 3]) == 0){
+      next
+    }
+    else{
+      tmpVar <- sample(c(1, 2, 3), 3)
+      companyDataset[v, tmpVar[1]] <- 1
+      companyDataset[v, tmpVar[2]] <- 0
+      companyDataset[v, tmpVar[3]] <- 0
+      
+    }
+  }
+  else{
+    next
+  }
+}
+
+# type of logic correction: If 'emplyr listed on a stock exchange == TRUE',
+# then emplyr cannot be a University OR NGO.
+for (w in 1:nrow(companyDataset)){
+  if (companyDataset[w, 4] == 1){
+    if ((companyDataset[w, 1] == 1) || (companyDataset[w, 3] == 1)){
+      companyDataset[w, 1] <- 0
+      companyDataset[w, 3] <- 0
+    }
+    else{
+      next
+    }
+  }
+  else{
+    next
+  }
+}
+
+# type of logic correction: employer cannot be both (less than 1yr old) AND 
+# (greater than 10 yrs old)
+for (x in 1:nrow(companyDataset)){
+  if ((companyDataset[x, 7] == 1) && (companyDataset[x, 8] == 1)){
+    tmpVar <- sample(c(7, 8), 2)
+    companyDataset[x, tmpVar[1]] <- 1
+    companyDataset[x, tmpVar[2]] <- 0
+  }
+  else{
+    next
+  }
+}
+
+# type of logical correction: If employer has international physical presence,
+# then, it is internationally recognized via its work.
+for (y in 1:nrow(companyDataset)){
+  if (companyDataset[y, 13] == 1){
+    if (companyDataset[y, 12] == 0){
+      companyDataset[y, 12] <- 1
+    }
+    else{
+      next
+    }
+  }
+  else{
+    next
+  }
+}
+
+# type of logical mistake corrected: total number of employees cannot be both
+# (less than 100) AND (greater than 1000)
+for (a in 1:nrow(companyDataset)){
+  if ((companyDataset[a, 9] == 1) && (companyDataset[a,10] == 1)){
+    tmpVar <- sample(c(9, 10), 2)
+    companyDataset[a, tmpVar[1]] <- 1
+    companyDataset[a, tmpVar[2]] <- 0
+  }
+  else{
+    next
+  }
+}
+
+# coercing company dataset into type data.frame--------------------------------
+companyDataset <- as.data.frame(companyDataset)
+
+# stacking 'myPersonalizedLabels' (generated in 'Part-1') last column of the
+# company dataset.
+companyDataset[, (ncol(companyDataset)+1)] <- (myPersonalizedLabels %>% 
+                                                as.data.frame()) 
+colnames(companyDataset)[kTotalNumOfFeat+1] <- "labels"
+
+# setting various controls for training of the model---------------------------
+indexTrain <- createDataPartition(companyDataset$labels, p = 0.70,
+                                  list = FALSE)
+trainingSet <- companyDataset[indexTrain, ]
+testSet <- companyDataset[-indexTrain, ]
+controls <- trainControl(method = "repeatedcv", 
+                         repeats = 5) 
+                        
+# setting up a search grid for k fold cross validation-------------------------
+# below search grid contains only one value each for 'alpha' and 'lambda',
+# this is because I have already trained and tuned the model several times
+# and the below values are the optimal ones as they performed best on avg
+# in k fold cross validation. Note alpha = 1 (lasso penalty), alpha = 0,
+# (ridge penalty). See ?glmnet for more details.
+
+searchGrid <- expand.grid(alpha = 0.01385693, lambda = 1.720017)
+
+# user interface---------------------------------------------------------------
+print("     Training Personalized Job Classifier...", quote = FALSE)
+
+# training PersonalizedJobClassifier using caret package's 'glmnet' method-----
+personalizedJobClassifier <- train(x = trainingSet[, 1:kTotalNumOfFeat], 
+                                   y = as.factor(
+                                     trainingSet[, (kTotalNumOfFeat+1)]), 
+                                   method = "glmnet", 
+                                   metric = "Accuracy",
+                                   trControl = controls,
+                                   tuneGrid = searchGrid
+                                   )
+
+# total time elapsed-----------------------------------------------------------
+elapsedTime <- proc.time() - startTime
+elapsedTime <- as.vector(elapsedTime)
+
+# user interface---------------------------------------------------------------
+print(">> Done!", quote = FALSE)
+print(sprintf(">> Elapsed Time (in min): %f", ((elapsedTime[3])/60)),
+       quote = FALSE)
+
+# end of code------------------------------------------------------------------
+```
+
+&nbsp;
+
+## Part-2: Code Discussion
+
+#### Where do we stand?
+We have completed the model. The model is saved in the object named `personalizedJobClassifier`. User1 can now use this model by feeding it a company feature vector for a **new** company (i.e. a company that was not included in the training and/or test sets) and the model will output a label that will inform User1 of his job prospects(0/1) in the company. Next, let's discuss a few specific code chunks of Part-2 that need more attntion than that provided in the comments above.
+
+#### Company Dataset: Structure
+First, lets see the general structure of the company dataset. Below, I display the  first 5 rows and a few feature columns (I display 4 feature columns, but the company dataset contains `r kTotalNumOfFeat` feature columns) followed by a `labels` column. Note that the `labels` column comes at the end (i.e. 21st column), but I display it here just after the first 4 columns for illustration purposes. Also, the caret package denotes the labels as `1` and `2` which corresponds to `0` and `1` respectively. In other words, it does not matter how you represent a binary state(0/1, 1/2, 3/4...), the underlying idea is the same which is that the labels column is a binary column.
+
+&nbsp;
+
+```{r compDatasetStrDisp}
+colNotToDisplay <- c(5:20)
+knitr::kable(
+  companyDataset[1:5, -colNotToDisplay],
+  caption = "Company Dataset: Structure")
+```
+
+&nbsp;
+
+*For those who have read the corresponding paper, please refer Figure 3, Pg.7 of the paper which displays the same structure as the table above*. I will describe the company dataset in words so as to get a better intuition of its structure and purpose.
+
+What does row~1~ in company dataset represent?: First comes the Company Name (C~1~), that is followed by a 'n' dimensional company feature vector (V~1~), which defines C~1~ in terms of 'n' features (just like the applicant feature vector described the applicant in terms of a feature vector) after that comes a label (L~1~), this label L~1~ came from **Part-1** where we ran User1's applicant feature vector through the model M~1~ (remember, M~1~ took as its input an applicant feature vector and outputted whether or not that  applicant got the job in company C~1~) which outputs a label which is stored in `myPersonalizedLabels[1]` (let's assume that label was 1, i.e. User1 got the job in C~1~). So, an informal way to read row~1~ of the table is as follows, *As per M~1~, User1 got the job in company C~1~ which has features V~1~*.
+
+We will follow a similar procedure for row~2~ to row~100~, while keeping in mind that just like L~1~, each label L~2~ to L~n~ comes from running User1's applicant feature vector in turn through models M~2~ to M~n~ (this is what makes the model personalized to User1 as all labels L~1~ to L~n~ in our entire `companydataset` correspond to User1). A detailed discussion of this can be found in the corresponding paper (section III).
+
+#### Company Dataset: Column Names
+Let's look at the column names of the company Dataset in more detail,
+
+&nbsp;
+
+```{r colNamesCompDat}
+colnames(companyDataset)
+```
+
+&nbsp;
+
+Each column (except the `labels` column) is to be interpreted as a **feature** that captures some information about the company. The `labels` column in the end captures one of two states; '1'- gets the job, '0'- does not get a job. Each feature is to be interpreted as a question which has one of two answers; yes(1)/no(0).
+
+I have abbreviated the features such that they can be easily reconstructed into full questions by the reader. The manner in which we interpret these columns is very similar to what we did in **Part-1** for the applicant dataset with the difference that now each column captures information (in form of 0/1) for a **company** not an **applicant**. For example `r colnames(companyDataset)[1]` translates into the question **Is the employer a University?**, `r colnames(companyDataset)[13]` translates into **Does the employer have international physical presence?**. I leave the rest for the reader to explore.
+
+Please note that not all of the features may not neatly fit in (1/0) outcome state, but I have assumed that they do for simulation purposes. Also, when building a full fledged model (which we will not do here), in addition to these binary features, we can use much more interesting features using techniques like web scraping (I have discussed this in greater detail in the correponding paper).
+
+\pagebreak
+
+#### Personalized Job Classifier Model
+Now, let's look at the output of our final model i.e. **Personalized Job Classifier Model**,
+
+&nbsp;
+
+```{r persJobClassMod}
+personalizedJobClassifier
+```
+
+&nbsp;
+
+The accuracy of the Personalized Job Classifier Model crosses the 70% mark. This represents an average accuracy over 10 fold cross validation repeated 5 times. This means that, on average, 70 out of 100 times our model (with alpha = `r personalizedJobClassifier$results$alpha`, lambda = `r personalizedJobClassifier$results$lambda`) correctly predicts the label when feeded a company feature vector. Again the alpha and lambda values are trained and tuned by me. The reader can set up a search Grid using `expand.grid()` fuction if they want to re tune the model. 
+
+#### Part-2: Conclusion
+
+Once trained and tuned, the model serves as a **Personalized Job Classifier** for User1, which means that the model can now take any new company that it has not seen before, distill that company's characteristics into a company feature vector, take that vector as its input and output a label (0/1) which will inform User1 (with certain probability, whether or not he gets a job in that new company. Also, User1 can do this for any number of new companies, all he has to do is enter as an input to the model the company feature vector of the company he is interested and get a label as an output that will inform him of his job prospects in that company. 
+
+**The model is complete. Finally, I will wrap up this presentation by discussing some important topics concerning the performance of the model as a whole.**
+
+## Wrap up
+
+#### Notes on reproducibility
+In many lines in the above code random numbers were generated and utilized. In particular during the training of the model, the underlying method (in our case, method = glmnet) utilizes random numbers during the phase of parameter estimation. Also, the resampling indices are chosen using random numbers. Given that, it is important to control randomness to assure reproducibility of results.
+
+To serve that purpose, I have used `set.seed()` function in the beginning of the code. But it turns out that there are a few subtleties to that. When we open a new R session, Initially, there is no seed; a new one is created from the current time and the process ID when one is required. Hence different sessions will give different simulation results, by default. So this means that **within** a session you will get the exact same results, but when **switching to a new session** the results will differ by a small amount (e.g. accuracy may slightly go up or down). So, this means that there is  **Intra-Session** reproducibility but not **Inter-Session** reproducibility.
+
+It turns out that we can mitigate this issue by using `.Random.seed` which is an integer vector, containing the random number generator (RNG) state for random number generation in R. This can be saved and restored in different sessions. It seems that it solves the problem of **Inter-Session** reproducibility and it does in most cases. More information on `.Random.seed` can be found [here](https://stat.ethz.ch/R-manual/R-devel/library/base/html/Random.html).
+
+But, there is yet another case (our case) in which even `.Random.seed` might not help. This is the case when there is a function like the `train()` function of the **caret** pacakge which does a lot of random number generation in form of resampling. Moreover, the `train()` function is a very general function in the sense that it has functionality for incorporating in its `method` argument 'one' of many packages (in my model above I used the **glmnet** package). How random numbers are generated is highly dependent on the pacakage author such that even after using `.Random.seed` we might not get the exact same results due to a potential clashes with the scheme that the package author has used. You can further read about this concern [here](http://topepo.github.io/caret/model-training-and-tuning.html#notes-on-reproducibility) where the concern is described in the specific context of the **caret** package's `train()` function.
+
+What does this all mean for the model above? To minimize the variance in **Inter-Session** reproducibility, I have tried and tested the model enough times such that for the final model the accuracy (given the tuned parameters) is always above 70%. There are some more ways in the **caret** package to avoid this extra manual labor that I have done which involves setting the seeds by hand for all the resampling iterations in the `trainControl()` function. I have not done that here. But, more information on that can be found [here](http://topepo.github.io/caret/model-training-and-tuning.html#notes-on-reproducibility).  
+
+#### Final bits of advice
+* The  entire model takes 5-8 min to train (depending on your computer), with **Part-1** taking the majority of the time. As you run the individual chunks of code (See **Run the code yourself: Instructions** section for more information) the progress will be printed  on the console for your reference. So, do keep the console window open.  
+
+* I have used 10 fold repeated cross validation (repeats = 5) in the above models. I could have chosen less number of repeats but I didn't so as to ensure that average (over the resamples) measure of accuracy I get as the output of my model is more reliable. Please note that decreasing the number of repeats will significantly reduce the time it takes to train the model. 
+
+* Please make sure that you have all the required packages needed for the model. Also make sure that you have the latest version updates. The list of all the packages that were used to build this model can be found under the **Packages and Version Information** section.
+
+#### Run the Code yourself: Instructions
+Below are simple instructions on how to run the code presented in this file in RStudio:
+
+1. (Ignore this step as you have already downloaded the file) Download the **Rmd** (R Markdown) file from the **File Downloads** section below.
+
+2. (Again, Ignore)Open the file in R Studio.
+
+3. Proceed at your own pace by starting from the beginning and running the code chunks (by clicking ">"  button in the chunk). The results are displayed right below the code (for e.g. plots, figures, etc.) and all output variables can be retrieved from the current environment and manipulated using the console. All code is contained in R code chunks which have the following structure,
+
+&nbsp;
+
+```{r codeChunkLookLike, echo = FALSE}
+print("```{r chunkName, option1, option2,...}", quote = FALSE)
+print("code line 1... ", quote = FALSE)
+print("code line 2... ", quote = FALSE)
+print("...", quote = FALSE)
+print("```", quote = FALSE)
+```
+
+&nbsp;
+
+Note: Running the code chunk by chunk retains the output produced in the current environment for you to manipulate. So, if you choose to do that all is good, no worries.
+
+But, if you want to **knit** the **.Rmd** file into a PDF all in one go, no variables will be retained in the environment for you to manipulate once the knit is complete. So, if you want to knit the **.Rmd** file into a PDF **AND** retain the variables in the environment, then you have to include an additional code chunk at the end of the **.Rmd** file that uses the `save.image()` function to save the current workspace into a **.RData** file which can be reloaded later for data manipulation. Below, in the section **Save Current Workspace** I have included code that will save all of your workspace in a file named **restoreWorkspace.RData** which will reside in your current working directory (type `getwd()` and hit enter in your R Studio console to see your current working directory). 
+
+Please remove `eval = FALSE` from the code in the section **Save Current Workspace** in order to activate the code chunk, in case you want to knit this document. Next, to load the **restoreWorkspace.RData** that you have just saved into the environment use the `load()` function.
+
+## File Downloads
+* Click [here](https://www.dropbox.com/s/jmocezoyhm5f28p/PersonalizedJobClassifierPaperAndSim.pdf?dl=0) to view/download the paper that lays down the foundation and terminology for the Personalized Job Classifier Model.
+
+## Useful Links
+* The model is built using the **caret** package, a short and precise introduction to the package can be found [here](https://cran.r-project.org/web/packages/caret/vignettes/caret.pdf) (approximate time required to read: 10 minutes).
+
+* The code is styled (with a few tweaks) as per the Google R style guide. Click [here](https://google.github.io/styleguide/Rguide.xml) to view the style guide.
+
+## Save Current Workspace
+
+&nbsp; 
+
+```{r workspaceSave, eval = FALSE}
+restoreWorkspace <- save.image()
+save(restoreWorkspace, file = "restoreWorkspace.RData")
+```
+
+## End-------------------------------------------------------------------------
